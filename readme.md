@@ -1,41 +1,57 @@
-# 📄 Challenge 1B – Connecting the Dots: Semantic Document Intelligence
+# Challenge 1B: Persona‑Driven Document Intelligence
 
-## 🧠 Problem Statement Overview
+## Overview
 
-Challenge 1B of the Adobe Hackathon tasks participants with building a document intelligence system capable of analyzing a set of unstructured PDF documents to extract the most relevant content based on two inputs:
+In **Round 1B** of the Adobe “Connecting the Dots” hackathon, our task is to build an offline, CPU‑only document analysis engine that:
 
-- A **persona** (e.g., "HR professional")
-- A **job-to-be-done (JTBD)** (e.g., "Create and manage fillable forms for onboarding and compliance")
+1. **Parses a collection** of PDF documents into structured sections.
+2. **Ranks and extracts** the most relevant sections for a given **Persona** and **Job‑to‑be‑Done (JTBD)**.
+3. **Outputs** a JSON containing metadata, top‑ranked sections, and refined sub‑section texts.
 
-The system must semantically understand the intent behind these inputs and intelligently extract the most useful sections from the documents.
-
----
-
-## 🧩 Solution Architecture
-
-Our pipeline is composed of two major modules:
-
-### 1. 🕵️ Section Extraction (`retriever.py`)
-- Parses PDFs using **PyMuPDF** to detect headings, font sizes, and spatial layout.
-- Extracts titles and splits documents into **logical sections**.
-- Uses a **fallback heuristic** (font size, center offset, word count) if headings are not clear.
-- Produces a structured list of sections with:
-  - `document` name
-  - `section_title`
-  - `chunks` (text blocks)
-  - `start_page` number
+This README explains the end‑to‑end approach, key design decisions, and instructions for running the solution.
 
 ---
 
-### 2. 📊 Semantic Ranking (`ranker.py`)
-- Embeds:
-  - Persona string
-  - JTBD string
-  - Each content chunk
-- Uses **`sentence-transformers/all-MiniLM-L6-v2`** to convert texts to vector embeddings.
-- Calculates **cosine similarity** between:
-  - Section ↔ Persona
-  - Section ↔ JTBD
-- Computes a weighted score:
-  ```python
-  final_score = 0.7 * JTBD_similarity + 0.3 * Persona_similarity
+## Architecture
+
+### 1. Section Extraction (Retriever)
+
+- **Library**: [PyMuPDF (Fitz)](https://pymupdf.readthedocs.io/)  
+- **Method**:  
+  - For each PDF, call `page.get_text("dict")` to obtain low‑level text, font, bbox, and style metadata.  
+  - Build visual and lexical features per line: relative font size, bold/italic flags, indentation, centering, ALL‑CAPS, numbering, space before, etc.  
+  - **Heuristic + ML Hybrid**:  
+    - **Layer 1 (Heuristics)**: Quickly classify obvious headings (large relative size, bold, centered, etc.).  
+    - **Layer 2 (ML Classifier)**: A pre‑trained Logistic Regression model refines ambiguous cases using the full feature vector.  
+  - Output: A list of `{"document", "section_title", "start_page", "chunks": [{"text","page"}...]}`.
+
+### 2. Persona‑Aware Ranking (Ranker)
+
+- **Library**: [Sentence‑Transformers](https://www.sbert.net/) with the **all‑MiniLM‑L6‑v2** model (≈90 MB).  
+- **Embedding**:  
+  - Encode the **Persona** string (e.g., “HR professional”) and the **JTBD** string (e.g., “Create and manage fillable forms…”).  
+  - For each section, encode all its text **chunks** (paragraphs) in one batch.  
+- **Scoring**:  
+  - Compute **cosine similarities** between each chunk and:  
+    - JTBD (weight 0.7)  
+    - Persona (weight 0.3)  
+  - Select the chunk with the highest **weighted** score to represent that section.  
+  - Assign `section.score = max_weighted_similarity`.  
+- **Selection**: Sort all sections by descending `score` and take the **top‑5**.  
+- **Output**:  
+  - `extracted_sections`: array of `{document, section_title, importance_rank, page_number}`  
+  - `refined_sections`: array of `{document, refined_text, page_number}`
+
+---
+
+## Installation & Usage
+
+### Requirements
+
+- Python 3.8+  
+- Dependencies in `requirements.txt`:
+  ```text
+  numpy
+  torch
+  sentence-transformers
+  PyMuPDF
