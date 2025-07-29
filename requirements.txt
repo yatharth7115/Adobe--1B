@@ -1,0 +1,10 @@
+numpy
+sentence-transformers
+pdfplumber
+PyMuPDF
+torch
+jsonschema
+
+
+
+
